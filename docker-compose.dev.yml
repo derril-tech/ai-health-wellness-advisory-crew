@@ -1,0 +1,194 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: timescale/timescaledb:latest-pg14
+    container_name: health_crew_postgres
+    environment:
+      POSTGRES_DB: health_crew
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d health_crew"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health_crew_network
+
+  # Redis for caching and Celery
+  redis:
+    image: redis:7-alpine
+    container_name: health_crew_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health_crew_network
+
+  # NATS for event bus
+  nats:
+    image: nats:2.9-alpine
+    container_name: health_crew_nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health_crew_network
+
+  # MinIO for object storage
+  minio:
+    image: minio/minio:latest
+    container_name: health_crew_minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health_crew_network
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile.dev
+    container_name: health_crew_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NEXT_PUBLIC_WS_URL=ws://localhost:3001
+    volumes:
+      - ./apps/frontend:/app
+      - /app/node_modules
+    depends_on:
+      - gateway
+    networks:
+      - health_crew_network
+
+  # API Gateway (NestJS)
+  gateway:
+    build:
+      context: ./apps/gateway
+      dockerfile: Dockerfile.dev
+    container_name: health_crew_gateway
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=health_crew
+      - REDIS_URL=redis://redis:6379
+      - NATS_URL=nats://nats:4222
+    volumes:
+      - ./apps/gateway:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - health_crew_network
+
+  # Orchestrator (FastAPI)
+  orchestrator:
+    build:
+      context: ./apps/orchestrator
+      dockerfile: Dockerfile.dev
+    container_name: health_crew_orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/health_crew
+      - REDIS_URL=redis://redis:6379/0
+      - NATS_URL=nats://nats:4222
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=health-crew
+    volumes:
+      - ./apps/orchestrator:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - health_crew_network
+
+  # Workers (Celery)
+  workers:
+    build:
+      context: ./apps/workers
+      dockerfile: Dockerfile.dev
+    container_name: health_crew_workers
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/health_crew
+      - REDIS_URL=redis://redis:6379/0
+      - NATS_URL=nats://nats:4222
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=health-crew
+    volumes:
+      - ./apps/workers:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - health_crew_network
+    command: celery -A celery_app worker --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  health_crew_network:
+    driver: bridge

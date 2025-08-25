@@ -1,0 +1,56 @@
+{
+  "name": "health-wellness-advisory-crew",
+  "version": "0.1.0",
+  "description": "Multi-agent coach for personalized health and wellness plans",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "docker-compose -f docker-compose.dev.yml up --build",
+    "dev:down": "docker-compose -f docker-compose.dev.yml down",
+    "dev:clean": "docker-compose -f docker-compose.dev.yml down -v",
+    "build": "npm run build:frontend && npm run build:gateway && npm run build:sdk",
+    "build:frontend": "cd apps/frontend && npm run build",
+    "build:gateway": "cd apps/gateway && npm run build",
+    "build:sdk": "cd packages/sdk && npm run build",
+    "install:all": "npm install && npm run install:frontend && npm run install:gateway && npm run install:sdk",
+    "install:frontend": "cd apps/frontend && npm install",
+    "install:gateway": "cd apps/gateway && npm install",
+    "install:sdk": "cd packages/sdk && npm install",
+    "lint": "npm run lint:frontend && npm run lint:gateway && npm run lint:sdk",
+    "lint:frontend": "cd apps/frontend && npm run lint",
+    "lint:gateway": "cd apps/gateway && npm run lint",
+    "lint:sdk": "cd packages/sdk && npm run lint",
+    "test": "npm run test:frontend && npm run test:gateway && npm run test:sdk",
+    "test:frontend": "cd apps/frontend && npm run test",
+    "test:gateway": "cd apps/gateway && npm run test",
+    "test:sdk": "cd packages/sdk && npm run test",
+    "clean": "npm run clean:frontend && npm run clean:gateway && npm run clean:sdk",
+    "clean:frontend": "cd apps/frontend && rm -rf .next dist",
+    "clean:gateway": "cd apps/gateway && rm -rf dist",
+    "clean:sdk": "cd packages/sdk && rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "typescript": "^5.3.3",
+    "prettier": "^3.1.0",
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "health",
+    "wellness",
+    "fitness",
+    "nutrition",
+    "ai",
+    "crewai",
+    "multi-agent"
+  ],
+  "author": "Health Crew Team",
+  "license": "MIT"
+}
